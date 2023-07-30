@@ -1,11 +1,11 @@
 use clap::{Args, Parser, Subcommand};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
-    net::TcpStream,
+    net::TcpStream, time::Duration,
 };
 
 static CONN_ADDR: &str = "127.0.0.1:4086";
-const DEF_CAPACITY: usize = 256;
+const DEFAULT_CAPACITY: usize = 1024;
 
 #[derive(Parser)]
 #[command(author = "Aaron Perez", version, about, long_about = None)]
@@ -44,44 +44,46 @@ impl McRemoteClientArgs {
                 if args.follow {
                     stream.write(&[0])?;
                     let mut reader = BufReader::new(&stream);
-                    let mut buf = String::with_capacity(DEF_CAPACITY);
+                    let mut buf = String::with_capacity(DEFAULT_CAPACITY);
                     let mut stdout = io::stdout().lock();
                     buf.clear();
-                    while reader.read_line(&mut buf)? != 0 {
-                        write!(stdout, "{buf}")?;
-                        buf.clear();
+                    loop {
+                        match reader.read_line(&mut buf).map_err(|e| e.kind()) {
+                            Ok(n) => {
+                                if n == 0 {
+                                    break;
+                                } else {
+                                    write!(stdout, "{buf}")?;
+                                }
+                            }
+                            Err(io::ErrorKind::WouldBlock) => std::thread::sleep(Duration::from_secs(2)),
+                            Err(err) => return Err(io::Error::new(err, "Not good :D")),
+                        }
                     }
                     writeln!(stdout)?;
                 } else {
                     stream.write(&[1])?;
-                    let mut reader = BufReader::new(&stream);
-                    let mut buf = String::with_capacity(DEF_CAPACITY);
-                    reader.read_to_string(&mut buf)?;
+                    let mut buf = String::with_capacity(DEFAULT_CAPACITY);
+                    stream.read_to_string(&mut buf)?;
                     println!("{buf}");
                 }
             }
             Commands::Start => {
                 stream.write(&[2])?;
-                let mut reader =
-                    BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
-                let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_to_string(&mut buf)?;
+                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
+                stream.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
             Commands::Stop => {
                 stream.write(&[3])?;
-                let mut reader =
-                    BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
-                let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_to_string(&mut buf)?;
+                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
+                stream.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
             Commands::Restart => {
                 stream.write(&[4])?;
-                let mut reader =
-                    BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
-                let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_to_string(&mut buf)?;
+                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
+                stream.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
         }
