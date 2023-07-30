@@ -46,15 +46,17 @@ impl McRemoteClientArgs {
                     let mut reader = BufReader::new(&stream);
                     let mut buf = String::with_capacity(DEF_CAPACITY);
                     let mut stdout = io::stdout().lock();
+                    buf.clear();
                     while reader.read_line(&mut buf)? != 0 {
                         write!(stdout, "{buf}")?;
                         buf.clear();
                     }
+                    writeln!(stdout)?;
                 } else {
                     stream.write(&[1])?;
                     let mut reader = BufReader::new(&stream);
                     let mut buf = String::with_capacity(DEF_CAPACITY);
-                    reader.read_line(&mut buf)?;
+                    reader.read_to_string(&mut buf)?;
                     println!("{buf}");
                 }
             }
@@ -63,7 +65,7 @@ impl McRemoteClientArgs {
                 let mut reader =
                     BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
                 let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_line(&mut buf)?;
+                reader.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
             Commands::Stop => {
@@ -71,7 +73,7 @@ impl McRemoteClientArgs {
                 let mut reader =
                     BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
                 let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_line(&mut buf)?;
+                reader.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
             Commands::Restart => {
@@ -79,10 +81,10 @@ impl McRemoteClientArgs {
                 let mut reader =
                     BufReader::with_capacity(DEF_CAPACITY, &stream).take(DEF_CAPACITY as u64);
                 let mut buf = String::with_capacity(DEF_CAPACITY);
-                reader.read_line(&mut buf)?;
+                reader.read_to_string(&mut buf)?;
                 println!("{buf}");
             }
         }
-        Ok(())
+        Ok(println!("Done"))
     }
 }
