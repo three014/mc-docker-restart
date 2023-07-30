@@ -69,11 +69,14 @@ impl Command {
                     let stdout = process.stdout.take().ok_or(tokio::io::Error::last_os_error())?;
                     let mut reader = BufReader::new(stdout);
                     let mut buf = Vec::with_capacity(256);
-                    while reader.read_buf(&mut buf).await? != 0 {
-                        socket.write(&buf).await?;
+                    loop {
+                        buf.clear();
+                        reader.read_buf(&mut buf).await?;
+                        if socket.write(&buf).await? == 0 {
+                            break;
+                        }
                     }
-                    process.wait().await?;
-                    Ok(())
+                    process.kill().await
                 } else {
                     let output = Self::docker(&args[..2]).await?;
                     socket.write_all(&output.stdout).await
