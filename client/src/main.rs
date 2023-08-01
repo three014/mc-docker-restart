@@ -1,8 +1,8 @@
-use std::io;
+use client::McRemoteClient;
 
-use clap::Parser;
-use client::McRemoteClientArgs;
-
-fn main() -> io::Result<()> {
-    McRemoteClientArgs::parse().run()
+fn main() -> tokio::io::Result<()> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(McRemoteClient::parse().run())
 }

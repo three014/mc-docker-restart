@@ -1,7 +1,9 @@
-use clap::{Args, Parser, Subcommand};
-use std::{
-    io::{self, BufRead, BufReader, Read, Write},
-    net::TcpStream, time::Duration,
+use clap::Parser;
+use shared::{Action, Command};
+use std::time::Duration;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    net::TcpStream,
 };
 
 static CONN_ADDR: &str = "127.0.0.1:4086";
@@ -10,83 +12,61 @@ const DEFAULT_CAPACITY: usize = 1024;
 #[derive(Parser)]
 #[command(author = "Aaron Perez", version, about, long_about = None)]
 #[command(propagate_version = true)]
-pub struct McRemoteClientArgs {
+struct Args {
     #[command(subcommand)]
-    commands: Commands,
+    commands: Action,
 }
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Checks the logs of the minecraft server.
-    Logs(LogsArgs),
-
-    /// Starts the minecraft server.
-    Start,
-
-    /// Stops the minecraft server.
-    Stop,
-
-    /// Restarts the minecraft server.
-    Restart,
+pub struct McRemoteClient {
+    action: Command,
 }
 
-#[derive(Args)]
-struct LogsArgs {
-    #[arg(short = 'f', default_value_t = false)]
-    follow: bool,
-}
+impl McRemoteClient {
+    pub fn parse() -> Self {
+        let args = Args::parse();
+        Self {
+            action: args.commands.into_command(),
+        }
+    }
 
-impl McRemoteClientArgs {
-    pub fn run(self) -> io::Result<()> {
-        let mut stream = TcpStream::connect(CONN_ADDR)?;
-        match self.commands {
-            Commands::Logs(args) => {
-                if args.follow {
-                    stream.write(&[0])?;
-                    let mut reader = BufReader::new(&stream);
-                    let mut buf = String::with_capacity(DEFAULT_CAPACITY);
-                    let mut stdout = io::stdout().lock();
-                    buf.clear();
+    pub async fn run(self) -> tokio::io::Result<()> {
+        let (mut rx, mut tx) = TcpStream::connect(CONN_ADDR).await?.into_split();
+        let mut buf = String::with_capacity(DEFAULT_CAPACITY);
+        self.action.write_self(&mut tx).await?;
+        match self.action.get() {
+            Action::Logs(args) if args.follow() => {
+                let mut reader = BufReader::new(rx);
+                let cancel = tokio::spawn(tokio::signal::ctrl_c());
+                let recv = tokio::spawn(async move {
                     loop {
-                        match reader.read_line(&mut buf).map_err(|e| e.kind()) {
+                        buf.clear();
+                        match reader.read_line(&mut buf).await.map_err(|e| e.kind()) {
                             Ok(n) => {
                                 if n == 0 {
                                     break;
                                 } else {
-                                    write!(stdout, "{buf}")?;
+                                    print!("{buf}");
                                 }
                             }
-                            Err(io::ErrorKind::WouldBlock) => std::thread::sleep(Duration::from_secs(2)),
-                            Err(err) => return Err(io::Error::new(err, "Not good :D")),
+                            Err(tokio::io::ErrorKind::WouldBlock) => {
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                            }
+                            Err(err) => return Err(tokio::io::Error::new(err, "Not good :D")),
                         }
                     }
-                    writeln!(stdout)?;
-                } else {
-                    stream.write(&[1])?;
-                    let mut buf = String::with_capacity(DEFAULT_CAPACITY);
-                    stream.read_to_string(&mut buf)?;
-                    println!("{buf}");
-                }
+                    Ok(())
+                });
+
+                cancel.await??;
+                recv.abort();
+                let _ = self.action.ctrl_c(&mut tx).await?;
+                println!();
             }
-            Commands::Start => {
-                stream.write(&[2])?;
-                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
-                stream.read_to_string(&mut buf)?;
-                println!("{buf}");
-            }
-            Commands::Stop => {
-                stream.write(&[3])?;
-                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
-                stream.read_to_string(&mut buf)?;
-                println!("{buf}");
-            }
-            Commands::Restart => {
-                stream.write(&[4])?;
-                let mut buf = String::with_capacity(DEFAULT_CAPACITY);
-                stream.read_to_string(&mut buf)?;
+            _ => {
+                rx.read_to_string(&mut buf).await?;
                 println!("{buf}");
             }
         }
-        Ok(println!("Done"))
+        Ok(())
     }
 }
