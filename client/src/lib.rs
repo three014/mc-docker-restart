@@ -29,33 +29,15 @@ impl McRemoteClient {
         }
     }
 
-    pub async fn run(self) -> tokio::io::Result<()> {
+    pub async fn connect(self) -> tokio::io::Result<()> {
         let (mut rx, mut tx) = TcpStream::connect(CONN_ADDR).await?.into_split();
         let mut buf = String::with_capacity(DEFAULT_CAPACITY);
         self.action.write_self(&mut tx).await?;
         match self.action.get() {
             Action::Logs(args) if args.follow() => {
-                let mut reader = BufReader::new(rx);
+                let reader = BufReader::new(rx);
                 let cancel = tokio::spawn(tokio::signal::ctrl_c());
-                let recv = tokio::spawn(async move {
-                    loop {
-                        buf.clear();
-                        match reader.read_line(&mut buf).await.map_err(|e| e.kind()) {
-                            Ok(n) => {
-                                if n == 0 {
-                                    break;
-                                } else {
-                                    print!("{buf}");
-                                }
-                            }
-                            Err(tokio::io::ErrorKind::WouldBlock) => {
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                            }
-                            Err(err) => return Err(tokio::io::Error::new(err, "Not good :D")),
-                        }
-                    }
-                    Ok(())
-                });
+                let recv = tokio::spawn(Self::recv_data(buf, reader));
 
                 cancel.await??;
                 recv.abort();
@@ -68,5 +50,27 @@ impl McRemoteClient {
             }
         }
         Ok(())
+    }
+
+    async fn recv_data<R>(mut buf: String, mut reader: R) -> tokio::io::Result<()>
+    where
+        R: AsyncBufReadExt + AsyncReadExt + Unpin,
+    {
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf).await.map_err(|e| e.kind()) {
+                Ok(n) => {
+                    if n == 0 {
+                        break Ok(());
+                    } else {
+                        print!("{buf}");
+                    }
+                }
+                Err(tokio::io::ErrorKind::WouldBlock) => {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                Err(err) => return Err(tokio::io::Error::new(err, "Not good :D")),
+            }
+        }
     }
 }

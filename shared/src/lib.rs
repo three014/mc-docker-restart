@@ -75,6 +75,12 @@ impl Action {
 }
 
 impl Command {
+    /// Write's the byte representation of itself
+    /// using the provided writer.
+    /// 
+    /// Returns an io result, where the Ok value is the number
+    /// of bytes written by the writer (which should be `1` for 
+    /// `Command` types).
     pub async fn write_self<'a, W>(&self, writer: &mut W) -> tokio::io::Result<usize>
     where
         W: tokio::io::AsyncWriteExt + Unpin + 'a,
@@ -82,17 +88,29 @@ impl Command {
         writer.write(&[self.command.as_u8()]).await
     }
 
+    /// Returns the client requested action.
     pub fn get(&self) -> &Action {
         &self.command
     }
 
+    /// Write's the `STOP_CODE` using the provided writer.
+    /// 
+    /// The purpose of this function is to be used when the client decides
+    /// to quit the connection with the server. The server should listen for
+    /// this code and attempt to clean up not only the connection with the
+    /// client, but also attempt to quit and cleanup any processes started
+    /// by the server session.
     pub async fn ctrl_c<'a, W>(&self, writer: &mut W) -> tokio::io::Result<usize>
     where
-        W: tokio::io::AsyncWriteExt + Unpin + 'a
+        W: tokio::io::AsyncWriteExt + Unpin + 'a,
     {
         writer.write(&[STOP_CODE]).await
     }
 
+    /// Attempts to produce a `Command` from the bytes read in from the provided
+    /// reader. This function will only succeed if the reader reads a non-empty
+    /// byte sequence and if the byte matches one of the options that `Action`
+    /// maps to.
     pub async fn try_from_reader<'a, R>(mut reader: R) -> Result<Self, String>
     where
         R: tokio::io::AsyncReadExt + Unpin + 'a,
@@ -103,7 +121,7 @@ impl Command {
         } else {
             buf[..]
                 .try_into()
-                .map_err(|err: &'static str| err.to_string())
+                .map_err(&str::to_string)
         }
     }
 }
